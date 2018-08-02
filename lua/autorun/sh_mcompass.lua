@@ -10,6 +10,7 @@ mCompass_Settings.Style_Selected = "squad"
 mCompass_Settings.Allow_Player_Spotting = true -- Allow / Disallow players from spotting. (Disabling just allows servers to implement their own method of spotting)
 mCompass_Settings.Allow_Entity_Spotting = false -- Not yet working.
 mCompass_Settings.Max_Spot_Distance = 15748.03 -- In GMOD units | Default( 15748.03 / 300m )
+mCompass_Settings.Spot_Duration = 10 -- In seconds
 
 mCompass_Settings.Style = {
 	["fortnite"] = {
@@ -64,12 +65,17 @@ if SERVER then
 
 	local mCompass_MarkerTable = mCompass_MarkerTable || {}
 
-	function Adv_Compass_AddMarker( pos, time, color, playersWhoCanSeeMarker )
+	function Adv_Compass_AddMarker( isEntity, pos, time, color, playersWhoCanSeeMarker )
 		local id = #mCompass_MarkerTable + 1
 		if playersWhoCanSeeMarker then
 			for k, v in pairs( playersWhoCanSeeMarker ) do
 				net.Start( "Adv_Compass_AddMarker" )
-					net.WriteVector( pos )
+					net.WriteBool( isEntity ) -- IsEntity
+					if isEntity then
+						net.WriteEntity( pos )
+					else
+						net.WriteVector( pos )
+					end
 					net.WriteFloat( time )
 					net.WriteColor( color && color || Color( 214, 48, 49 ) )
 					net.WriteInt( id, 4 )
@@ -77,7 +83,12 @@ if SERVER then
 			end
 		elseif !playersWhoCanSeeMarker then
 			net.Start( "Adv_Compass_AddMarker" )
-				net.WriteVector( pos )
+				net.WriteBool( isEntity ) -- IsEntity
+				if isEntity then
+					net.WriteEntity( pos )
+				else
+					net.WriteVector( pos )
+				end
 				net.WriteFloat( time )
 				net.WriteColor( color && color || Color( 250, 177, 160 ) )
 				net.WriteInt( id, 4 )
@@ -89,7 +100,7 @@ if SERVER then
 
 	function Adv_Compass_RemoveMarker( markerID )
 		for k, v in pairs( mCompass_MarkerTable ) do
-			if markerID == v[4] then
+			if markerID == v[5] then
 				net.Start( "Adv_Compass_RemoveMarker" )
 					net.WriteInt( markerID, 4 )
 				net.Broadcast()
@@ -110,15 +121,25 @@ if SERVER then
 	end
 
 	concommand.Add( "mcompass_spot", function( ply, cmd, args )
+
 		if mCompass_Settings.Allow_Player_Spotting then
+
 			local color = string.ToColor( v( args[1] ).." "..v( args[2] ).." "..v( args[3] ).." "..v( args[4] ) )
 			local tr = util.TraceLine( {
 				start = ply:EyePos(),
 				endpos = ply:EyePos() + ply:EyeAngles():Forward() * mCompass_Settings.Max_Spot_Distance,
 				filter = ply
 			} )
-			local id = Adv_Compass_AddMarker( tr.HitPos, CurTime() + 10, color )
+
+			local id
+			if tr.Entity && !tr.HitWorld then
+				id = Adv_Compass_AddMarker( true, tr.Entity, CurTime() + mCompass_Settings.Spot_Duration, color )
+			else
+				id = Adv_Compass_AddMarker( false, tr.HitPos, CurTime() + mCompass_Settings.Spot_Duration, color )
+			end
+
 		end
+
 	end )
 
 end
@@ -147,6 +168,10 @@ if CLIENT then
 		clientStyleSelection = ( cl_cvar_mcompass_style == 1 && "fortnite" || cl_cvar_mcompass_style == 2 && "squad" || cl_cvar_mcompass_style == 3 && "pubg" )
 		compassStyle = mCompass_Settings.Force_Server_Style && mCompass_Settings.Style_Selected || clientStyleSelection
 		compassTBLSelected = mCompass_Settings.Style[mCompass_Settings.Style_Selected]
+	end
+
+	local function loadFonts()
+		local returnVal = hook.Call( "mCompass_loadFonts" )
 	end
 
 	CreateClientConVar( "mcompass_enabled", "1", true, false )
@@ -225,6 +250,7 @@ if CLIENT then
 		if foo > 0 && foo < 10 then
 			cl_cvar_mcompass_ratio = foo
 		end
+		loadFonts()
 	end, "mcompass_ratio_cvar_callback" )
 	cl_cvar_mcompass_ratio = GetConVar( "mcompass_ratio" ):GetFloat()
 
@@ -245,27 +271,19 @@ if CLIENT then
 
 	----====----====----====----====----====----====----====----====----====----====----====----====----====----====----====----====----====----
 
-	local compassEnabled, displayHeading, compassWidth, compassHeight, compassMultiplier, compassXPos, oldMarkerSizeScale
+	local compassEnabled, displayHeading, compassWidth, compassHeight, compassMultiplier, compassXPos, oldMarkerSizeScale, oldFontRatio
 
 	-- This table is just going to hold all of the generated fonts for later use.
 	displayDistanceFontTable = displayDistanceFontTable || {}
+	fontRatioChangeTable = fontRatioChangeTable || {}
 
+	-- Function that handles fonts for the spot marker.
 	local function markerScaleFunc( markerSizeScale )
 
 		local returnVal
 		local n = math.Round( markerSizeScale )
 
 		if !oldMarkerSizeScale || oldMarkerSizeScale != n then
-
-			local h, r
-
-			if mCompass_Settings.Force_Server_Style then
-				h = mCompass_Settings.Style[mCompass_Settings.Style_Selected].height
-				r = mCompass_Settings.Style[mCompass_Settings.Style_Selected].ratio
-			else
-				h = cl_cvar_mcompass_height
-				r = cl_cvar_mcompass_ratio
-			end
 
 			if displayDistanceFontTable[n] then
 				returnVal = displayDistanceFontTable[n].name
@@ -286,9 +304,6 @@ if CLIENT then
 
 				returnVal = displayDistanceFontTable[n].name
 
-				-- print( "new font created: ".. newFontName .. "\nWith size of "..n )
-				-- PrintTable( displayDistanceFontTable )
-
 			end
 
 			oldMarkerSizeScale = n
@@ -303,7 +318,8 @@ if CLIENT then
 
 	end
 
-	local function loadFonts()
+	-- Doing this just so we could remake fonts and see ratio effects live. Kinda messy, I'll clean it up later. :P
+	hook.Add( "mCompass_loadFonts", "mCompass_loadFonts_addon", function()
 
 		local h, r, ms
 
@@ -317,42 +333,64 @@ if CLIENT then
 			ms = ScrH() * ( mCompass_Settings.Style[clientStyleSelection].maxMarkerSize / 45 )
 		end
 
-		local maxMarkerSize = mCompass_Settings.Force_Server_Style && mCompass_Settings.Style[mCompass_Settings.Style_Selected].maxMarkerSize || mCompass_Settings.Style[clientStyleSelection].maxMarkerSize
+		if r != oldFontRatio then
 
-		surface.CreateFont( "exo_compass_Numbers", {
-			font = "Exo",
-			size = ScrH() * ( h/r ),
-			antialias = true
-		} )
+			for k, v in pairs( fontRatioChangeTable ) do
+				if "exo_compass_Numbers_"..r == v.numberName then
+					oldFontRatio = r
+					return v
+				end
+			end
 
-		surface.CreateFont( "exo_compass_Distance-Display-Numbers", {
-			font = "Exo",
-			size = ( ScrH() * ( h/r ) ) * maxMarkerSize,
-			antialias = true
-		} )
+			local maxMarkerSize = mCompass_Settings.Force_Server_Style && mCompass_Settings.Style[mCompass_Settings.Style_Selected].maxMarkerSize || mCompass_Settings.Style[clientStyleSelection].maxMarkerSize
 
-		surface.CreateFont( "exo_compass_Letters", {
-			font = "Exo",
-			size = ScrH() * h,
-			antialias = true
-		} )
+			surface.CreateFont( "exo_compass_Numbers_"..r, {
+				font = "Exo",
+				size = ScrH() * ( h/r ),
+				antialias = true
+			} )
 
-	end
+			surface.CreateFont( "exo_compass_Distance-Display-Numbers_"..r, {
+				font = "Exo",
+				size = ( ScrH() * ( h/r ) ) * maxMarkerSize,
+				antialias = true
+			} )
+
+			surface.CreateFont( "exo_compass_Letters", {
+				font = "Exo",
+				size = ScrH() * h,
+				antialias = true
+			} )
+
+			local t = {
+				ratio = r,
+				numberName = "exo_compass_Numbers_"..r
+			}
+			table.insert( fontRatioChangeTable, t )
+
+			-- print( "Font created | Name = " .. "exo_compass_Numbers_"..r .. "\nNew table length: "..#fontRatioChangeTable )
+
+			oldFontRatio = r
+
+		end
+
+	end )
+	loadFonts()
 
 	compassEnabled = ( mCompass_Settings.Compass_Enabled && cl_cvar_mcompass_enabled )
 	displayHeading = mCompass_Settings.Style[compassStyle].heading
 
 	----------------------------------------------------------------------------------------------------------------
 
-	loadFonts()
-
 	local cl_mCompass_MarkerTable = cl_mCompass_MarkerTable || {}
 
 	net.Receive( "Adv_Compass_AddMarker", function( len )
 
-		local pos, time, color, id = net.ReadVector(), net.ReadFloat(), net.ReadColor(), net.ReadInt( 4 )
+		local isEntity = net.ReadBool()
+		local pos = ( isEntity && net.ReadEntity() || net.ReadVector() )
+		local time, color, id = net.ReadFloat(), net.ReadColor(), net.ReadInt( 4 )
 
-		table.insert( cl_mCompass_MarkerTable, { pos, time, color, id } )
+		table.insert( cl_mCompass_MarkerTable, { isEntity, pos, time, color, id } )
 
 	end )
 
@@ -361,7 +399,7 @@ if CLIENT then
 		local id = net.ReadInt( 4 )
 
 		for k, v in pairs( cl_mCompass_MarkerTable ) do
-			if id == v[4] then
+			if id == v[5] then
 				table.remove( cl_mCompass_MarkerTable, k )
 			end
 		end
@@ -429,15 +467,14 @@ if CLIENT then
 		if compassEnabled && cl_cvar_mcompass_enabled then
 
 			local ang = ply:GetAngles()
-				-- 		local cl_cvar_mcompass_enabled, cl_cvar_mcompass_style, cl_cvar_mcompass_heading, cl_cvar_mcompass_xposition, cl_cvar_mcompass_yposition
-				-- 		local cl_cvar_mcompass_width, cl_cvar_mcompass_height, cl_cvar_mcompass_multiplier, cl_cvar_mcompass_ratio
-			local compassX, compassY, width, height, multiplier, offset, spacing, numOfLines, fadeDistMultiplier
+			local compassX, compassY, width, height, multiplier, offset, spacing, numOfLines, fadeDistMultiplier, ratio
 			local displayHeading, fadeDistance, color, compassBearingW, compassBearing, maxMarkerSize, minMarkerSize
 
 			if mCompass_Settings.Force_Server_Style then
 				compassX, compassY = ScrW()*compassTBLSelected.compassX, ScrH()*compassTBLSelected.compassY
 				width, height = ScrW()*compassTBLSelected.width, ScrH()*compassTBLSelected.height
 				multiplier = compassTBLSelected.multiplier
+				ratio = compassTBLSelected.ratio
 				color = compassTBLSelected.color
 				minMarkerSize, maxMarkerSize = ScrH() * ( compassTBLSelected.minMarkerSize / 45 ), ScrH() * ( compassTBLSelected.maxMarkerSize / 45 )
 				displayHeading = compassTBLSelected.heading
@@ -445,6 +482,7 @@ if CLIENT then
 				compassX, compassY = ScrW()*cl_cvar_mcompass_xposition, ScrH()*cl_cvar_mcompass_yposition
 				width, height = ScrW()*cl_cvar_mcompass_width, ScrH()*cl_cvar_mcompass_height
 				multiplier = cl_cvar_mcompass_multiplier
+				ratio = cl_cvar_mcompass_ratio
 				color = cl_cvar_mcompass_color
 				minMarkerSize, maxMarkerSize = ScrH() * ( compassTBLSelected.minMarkerSize / 45 ), ScrH() * ( compassTBLSelected.maxMarkerSize / 45 )
 				displayHeading = cl_cvar_mcompass_heading
@@ -457,11 +495,11 @@ if CLIENT then
 			fadeDistMultiplier = 1
 			fadeDistance = (width/2) / fadeDistMultiplier
 
-			surface.SetFont( "exo_compass_Numbers" )
+			surface.SetFont( "exo_compass_Numbers_"..ratio )
 
 			if compassStyle == "squad" then
 				local text = math.Round( 360 - ( ang.y % 360 ) )
-				local font = "exo_compass_Numbers"
+				local font = "exo_compass_Numbers_"..ratio
 				compassBearingW, compassBearingH = custom_compass_GetTextSize( font, text )
 				surface.SetFont( font )
 				surface.SetTextColor( Color( 255, 255, 255 ) )
@@ -479,7 +517,7 @@ if CLIENT then
 				if i % 15 == 0 && i > 0 then
 
 					local text = adv_compass_tbl[360 - (i % 360)] && adv_compass_tbl[360 - (i % 360)] || 360 - (i % 360)
-					local font = type( text ) == "string" && "exo_compass_Letters" || "exo_compass_Numbers"
+					local font = type( text ) == "string" && "exo_compass_Letters" || "exo_compass_Numbers_"..ratio
 					local w, h = custom_compass_GetTextSize( font, text )
 
 					surface.SetDrawColor( Color( color.r, color.g, color.b, calculation ) )
@@ -491,7 +529,7 @@ if CLIENT then
 						surface.SetTextPos( x - w/2, compassY + height * 0.6 )
 						surface.DrawText( text )
 					elseif compassStyle == "fortnite" then
-						if font == "exo_compass_Numbers" then
+						if font == "exo_compass_Numbers_"..ratio then
 							surface.DrawLine( x, compassY, x, compassY + height * 0.3 )
 							surface.SetTextPos( x - w/2, compassY + height * 0.5 )
 							surface.DrawText( text )
@@ -539,20 +577,22 @@ if CLIENT then
 
 			for k, v in pairs( cl_mCompass_MarkerTable ) do
 
-				if CurTime() > v[2] then
+				if CurTime() > v[3] || ( v[1] && !IsValid( v[2] ) )  then
 					table.remove( cl_mCompass_MarkerTable, k )
+					continue
 				end
 
-				local d = ply:GetPos():Distance( v[1] )
+				local spotPos = ( v[1] && v[2]:GetPos() || v[2] )
+				local d = ply:GetPos():Distance( spotPos )
 				local currentVar = 1 - ( d / ( 300 / 0.01905 ) ) -- Converting 300m to gmod units
 				local markerScale = Lerp( currentVar, minMarkerSize, maxMarkerSize  )
 				local font = markerScaleFunc( markerScale )
 
-				local yAng = ang.y - ( v[1] - ply:GetPos() ):GetNormalized():Angle().y
+				local yAng = ang.y - ( spotPos - ply:GetPos() ):GetNormalized():Angle().y
 				local markerSpot = math.Clamp( ( ( compassX + ( width/2 * multiplier ) ) - ( ( ( -yAng - offset ) % 360 ) * spacing ) ), compassX - width/2, compassX + width/2 )
 
 				surface.SetMaterial( mat )
-				surface.SetDrawColor( v[3] )
+				surface.SetDrawColor( v[4] )
 				surface.DrawTexturedRect( markerSpot - markerScale/2, compassY - markerScale - markerScale/2, markerScale, markerScale )
 
 				-- Drawing text above markers
@@ -583,7 +623,7 @@ if CLIENT then
 
 				if displayHeading then
 					local text = math.Round( 360 - ( ang.y % 360 ) )
-					local font = "exo_compass_Numbers"
+					local font = "exo_compass_Numbers_"..ratio
 					local w, h = custom_compass_GetTextSize( font, text )
 					surface.SetFont( font )
 					surface.SetTextColor( Color( 255, 255, 255 ) )
@@ -594,6 +634,73 @@ if CLIENT then
 			end
 
 		end
+
+	end )
+
+	hook.Add( "PopulateToolMenu", "mCompass_PopulateToolMenu", function()
+
+		spawnmenu.AddToolMenuOption( "Options", "mCompass", "Settings", "Settings", "", "", function( panel )
+
+			panel:ClearControls()
+
+			local Label1 = vgui.Create( "DLabel", panel )
+			Label1:Dock( TOP )
+			Label1:SetTextColor( Color( 50, 50, 50 ) )
+			Label1:SetText( "Client Settings" )
+			Label1:SizeToContents()
+			panel:AddItem( Label1 )
+
+			----====----====----====----====----====----====----====----
+
+			local box = vgui.Create( "DCheckBoxLabel", panel )
+			box:SetText( "Enabled"  )
+			box:SetTextColor( Color( 50, 50, 50 ) )
+			box:SetConVar( "mcompass_enabled" )
+			box:SetValue( GetConVar( "mcompass_enabled" ):GetInt() )
+			box:SizeToContents()
+			panel:AddItem( box )
+
+			local box2 = vgui.Create( "DCheckBoxLabel", panel )
+			box2:SetText( "Show Heading"  )
+			box2:SetTextColor( Color( 50, 50, 50 ) )
+			box2:SetConVar( "mcompass_heading" )
+			box2:SetValue( GetConVar( "mcompass_heading" ):GetInt() )
+			box2:SizeToContents()
+			panel:AddItem( box2 )
+
+			panel:NumSlider( "Style", "mcompass_style", 1, 3, 0 )
+
+			panel:NumSlider( "X Position", "mcompass_xposition", 0, 1 )
+			panel:NumSlider( "Y Position", "mcompass_yposition", 0, 1 )
+			panel:NumSlider( "Width", "mcompass_width", 0, 1 )
+			panel:NumSlider( "Height", "mcompass_height", 0, 1 )
+
+			panel:NumSlider( "Multiplier", "mcompass_multiplier", 1, 10, 0 )
+			panel:NumSlider( "Ratio (font size)", "mcompass_ratio", 0, 10 )
+
+			local mixercolor = string.ToColor( GetConVar( "mcompass_color" ):GetString() )
+
+			local mixer = vgui.Create( "DColorMixer", panel )
+			mixer:SizeToContents()
+			mixer:SetColor( mixercolor )
+			panel:AddItem( mixer )
+
+			local but1 = vgui.Create( "DButton", panel )
+			but1:SetText( "Set Color" )
+			but1.DoClick = function( self )
+				local t = mixer:GetColor()
+				RunConsoleCommand( "mcompass_color", tostring(t.r).." "..tostring(t.g).." "..tostring(t.b).." "..tostring(t.a) )
+			end
+			panel:AddItem( but1 )
+
+			local but2 = vgui.Create( "DButton", panel )
+			but2:SetText( "Reset Settings" )
+			but2.DoClick = function( self )
+				RunConsoleCommand( "mcompass_reset" )
+			end
+			panel:AddItem( but2 )
+
+		end )
 
 	end )
 
