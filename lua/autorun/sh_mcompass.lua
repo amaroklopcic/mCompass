@@ -65,7 +65,10 @@ if SERVER then
 
 	local mCompass_MarkerTable = mCompass_MarkerTable || {}
 
-	function Adv_Compass_AddMarker( isEntity, pos, time, color, playersWhoCanSeeMarker )
+	function Adv_Compass_AddMarker( isEntity, pos, time, color, playersWhoCanSeeMarker, icon, name )
+		icon = icon || ""
+		name = name || ""
+
 		local id = #mCompass_MarkerTable + 1
 		if playersWhoCanSeeMarker then
 			for k, v in pairs( playersWhoCanSeeMarker ) do
@@ -79,6 +82,8 @@ if SERVER then
 					net.WriteFloat( time )
 					net.WriteColor( color && color || Color( 214, 48, 49 ) )
 					net.WriteInt( id, 4 )
+					net.WriteString( icon )
+					net.WriteString( name )
 				net.Send( v )
 			end
 		elseif !playersWhoCanSeeMarker then
@@ -92,9 +97,11 @@ if SERVER then
 				net.WriteFloat( time )
 				net.WriteColor( color && color || Color( 250, 177, 160 ) )
 				net.WriteInt( id, 4 )
+				net.WriteString( icon )
+				net.WriteString( name )
 			net.Broadcast()
 		end
-		table.insert( mCompass_MarkerTable, { pos, time, color || Color( 214, 48, 49 ), id } )
+		table.insert( mCompass_MarkerTable, { pos, time, color || Color( 214, 48, 49 ), id, icon, name } )
 		return id
 	end
 
@@ -384,13 +391,19 @@ if CLIENT then
 
 	local cl_mCompass_MarkerTable = cl_mCompass_MarkerTable || {}
 
+	local mat = Material( "compass/compass_marker_01" )
+	local mat2 = Material( "compass/compass_marker_02" )
+
 	net.Receive( "Adv_Compass_AddMarker", function( len )
 
 		local isEntity = net.ReadBool()
 		local pos = ( isEntity && net.ReadEntity() || net.ReadVector() )
-		local time, color, id = net.ReadFloat(), net.ReadColor(), net.ReadInt( 4 )
+		local time, color, id, icon_mat, icon_name = net.ReadFloat(), net.ReadColor(), net.ReadInt( 4 ), net.ReadString(), net.ReadString()
 
-		table.insert( cl_mCompass_MarkerTable, { isEntity, pos, time, color, id } )
+		icon_mat = ( icon_mat == "" ) && mat || Material( icon_mat )
+		icon_name = icon_name || ""
+
+		table.insert( cl_mCompass_MarkerTable, { isEntity, pos, time, color, id, icon_mat, icon_name } )
 
 	end )
 
@@ -457,9 +470,6 @@ if CLIENT then
 		[360] = "N"
 	}
 
-	local mat = Material( "compass/compass_marker_01" )
-	local mat2 = Material( "compass/compass_marker_02" )
-
 	hook.Add( "HUDPaint", "HUDPaint_Compass", function()
 
 		local ply = LocalPlayer()
@@ -485,6 +495,7 @@ if CLIENT then
 				ratio = cl_cvar_mcompass_ratio
 				color = cl_cvar_mcompass_color
 				minMarkerSize, maxMarkerSize = ScrH() * ( compassTBLSelected.minMarkerSize / 45 ), ScrH() * ( compassTBLSelected.maxMarkerSize / 45 )
+				print( minMarkerSize, maxMarkerSize )
 				displayHeading = cl_cvar_mcompass_heading
 			end
 			offset = compassTBLSelected.offset
@@ -591,12 +602,12 @@ if CLIENT then
 				local yAng = ang.y - ( spotPos - ply:GetPos() ):GetNormalized():Angle().y
 				local markerSpot = math.Clamp( ( ( compassX + ( width/2 * multiplier ) ) - ( ( ( -yAng - offset ) % 360 ) * spacing ) ), compassX - width/2, compassX + width/2 )
 
-				surface.SetMaterial( mat )
+				surface.SetMaterial( v[6] )
 				surface.SetDrawColor( v[4] )
 				surface.DrawTexturedRect( markerSpot - markerScale/2, compassY - markerScale - markerScale/2, markerScale, markerScale )
 
 				-- Drawing text above markers
-				local text = custom_compass_GetMetricValue( d )
+				local text = ( v[7] != "" ) && v[7].." - "..custom_compass_GetMetricValue( d ) || custom_compass_GetMetricValue( d )
 				local w, h = custom_compass_GetTextSize( font, text )
 
 				surface.SetFont( font )
