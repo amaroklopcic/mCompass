@@ -495,7 +495,6 @@ if CLIENT then
 				ratio = cl_cvar_mcompass_ratio
 				color = cl_cvar_mcompass_color
 				minMarkerSize, maxMarkerSize = ScrH() * ( compassTBLSelected.minMarkerSize / 45 ), ScrH() * ( compassTBLSelected.maxMarkerSize / 45 )
-				print( minMarkerSize, maxMarkerSize )
 				displayHeading = cl_cvar_mcompass_heading
 			end
 			offset = compassTBLSelected.offset
