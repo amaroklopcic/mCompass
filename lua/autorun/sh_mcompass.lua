@@ -522,7 +522,7 @@ if CLIENT then
 				local x = ( compassX + ( width/2 * multiplier ) ) - ( ( ( i - ang.y - offset ) % 360 ) * spacing )
 				local value = math.abs( x - compassX )
 				local calc = 1 - ( ( value + ( value - fadeDistance ) ) / ( width/2 ) )
-				local calculation = 255 * math.Clamp( calc, 0, calc )
+				local calculation = 255 * math.Clamp( calc, 0.001, 1 )
 
 				if i % 15 == 0 && i > 0 then
 
