@@ -58,3 +58,95 @@ mCompass_Settings.Styles = {
 --------------------------------------------------------------
 -- Dont edit anything below this line.
 --------------------------------------------------------------
+
+if SERVER then
+
+	util.AddNetworkString("Adv_Compass_AddMarker")
+	util.AddNetworkString("Adv_Compass_RemoveMarker")
+
+	local mCompass_MarkerTable = mCompass_MarkerTable || {}
+
+	function Adv_Compass_AddMarker(isEntity, pos, time, color, playersWhoCanSeeMarker, icon, name)
+		icon = icon || ""
+		name = name || ""
+
+		local id = #mCompass_MarkerTable + 1
+		if playersWhoCanSeeMarker then
+			for k, v in pairs(playersWhoCanSeeMarker) do
+				net.Start("Adv_Compass_AddMarker")
+					net.WriteBool(isEntity) -- IsEntity
+					if isEntity then
+						net.WriteEntity(pos)
+					else
+						net.WriteVector(pos)
+					end
+					net.WriteFloat(time)
+					net.WriteColor(color && color || Color(214, 48, 49))
+					net.WriteInt(id, 4)
+					net.WriteString(icon)
+					net.WriteString(name)
+				net.Send(v)
+			end
+		elseif !playersWhoCanSeeMarker then
+			net.Start("Adv_Compass_AddMarker")
+				net.WriteBool(isEntity) -- IsEntity
+				if isEntity then
+					net.WriteEntity(pos)
+				else
+					net.WriteVector(pos)
+				end
+				net.WriteFloat(time)
+				net.WriteColor(color && color || Color(250, 177, 160))
+				net.WriteInt(id, 4)
+				net.WriteString(icon)
+				net.WriteString(name)
+			net.Broadcast()
+		end
+		table.insert(mCompass_MarkerTable, { pos, time, color || Color(214, 48, 49), id, icon, name })
+		return id
+	end
+
+	function Adv_Compass_RemoveMarker(markerID)
+		for k, v in pairs(mCompass_MarkerTable) do
+			if markerID == v[5] then
+				net.Start("Adv_Compass_RemoveMarker")
+					net.WriteInt(markerID, 4)
+				net.Broadcast()
+				table.remove(mCompass_MarkerTable, k)
+			end
+		end
+	end
+
+	if mCompass_Settings.Use_FastDL then
+		resource.AddFile("materials/compass/compass_marker_01.vmt")
+		resource.AddFile("materials/compass/compass_marker_02.vmt")
+		resource.AddFile("resource/fonts/exo/Exo-Regular.ttf")
+	end
+
+	local function v(arg)
+		local arg = tonumber(arg)
+		return math.Clamp(arg && arg || 255, 0, 255)
+	end
+
+	concommand.Add("mcompass_spot", function(ply, cmd, args)
+		if mCompass_Settings.Allow_Player_Spotting then
+			local color = string.ToColor(v(args[1]).." "..v(args[2]).." "..v(args[3]).." "..v(args[4]))
+			local tr = util.TraceLine({
+				start = ply:EyePos(),
+				endpos = ply:EyePos() + ply:EyeAngles():Forward() * mCompass_Settings.Max_Spot_Distance,
+				filter = ply
+			})
+			local id
+			if tr.Entity && !tr.HitWorld then
+				id = Adv_Compass_AddMarker(true, tr.Entity, CurTime() + mCompass_Settings.Spot_Duration, color)
+			else
+				id = Adv_Compass_AddMarker(false, tr.HitPos, CurTime() + mCompass_Settings.Spot_Duration, color)
+			end
+		end
+	end)
+
+end
+
+if CLIENT then
+
+end
