@@ -1,0 +1,1 @@
+"F:\Steam Library\steamapps\common\garrysmod\bin\gmpublish.exe" update -id "1452363997" -addon %~n1.gma
