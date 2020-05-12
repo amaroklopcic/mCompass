@@ -532,7 +532,7 @@ if CLIENT then
 				local calc = 1 - ((value + (value - fadeDistance)) / (width / 2))
 				local calculation = 255 * math.Clamp(calc, 0.001, 1)
 
-				local i_offset = math.Round(i - offset - (numOfLines / 2)) % 360
+				local i_offset = -(math.Round(i - offset - (numOfLines / 2))) % 360
 				if i_offset % 15 == 0 and i_offset >= 0 then
 					local a = i_offset
 					local text = adv_compass_tbl[360 - (a % 360)] and adv_compass_tbl[360 - (a % 360)] or 360 - (a % 360)
