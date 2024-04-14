@@ -1,117 +1,106 @@
 include("autorun/client/helpers.lua")
 
 
+-- TODO: add the following cvars
+-- justify top/bottom -> align ticks to the top or bottom if they aren't full height ticks
+-- headings above/below -> moves main headings, sub headings above or below the compass
+-- display compass heading carrot -> optionally display carrot
+-- display compass heading carrot above or below -> display carrot above or below compass
+-- show main heading text -> display "N", "S", "E" every 90 degrees
+-- show sub heading text -> display "NE", "NW", "SE" every 45 degrees
+-- show num heading text -> display "330", "345", "15", "30" every 15 degrees
+-- show ticks -> optionally choose to display ticks or not
+-- font -> allow user to select fonts
+-- main heading font size
+-- sub heading font size
+-- number heading font size
+-- compass line thickness
+-- TODO: get away from pre-defined styes
+-- TODO: ratio is confusing, should instead be split into main heading font size, sub heading font size, and number heading font size
+-- spacing convar is also kind of confusing, wondering if using the word gap would make more sense
+
+local _mcompass_cvars_definitions = {
+    ["enabled"] = {
+        ["default"] = "1",
+        ["min"] = 0,
+        ["max"] = 1,
+        ["help"] = "Should mCompass be enabled/disabled"
+    },
+    ["display_heading"] = {
+        ["default"] = "1",
+        ["min"] = 0,
+        ["max"] = 1,
+        ["help"] = "Should mCompass display the precise heading"
+    },
+    ["x_pos"] = {
+        ["default"] = "0.5",
+        ["min"] = 0,
+        ["max"] = 1,
+        ["help"] = "Where mCompass should be drawn on the x position"
+    },
+    ["y_pos"] = {
+        ["default"] = "0.05",
+        ["min"] = 0,
+        ["max"] = 1,
+        ["help"] = "Where mCompass should be drawn on the y position"
+    },
+    ["width"] = {
+        ["default"] = "0.25",
+        ["min"] = 0,
+        ["max"] = 1,
+        ["help"] = "How wide mCompass should be drawn on screen (e.g. a value of 0.25 takes up 25% of the screen width)"
+    },
+    ["height"] = {
+        ["default"] = "0.03",
+        ["min"] = 0,
+        ["max"] = 1,
+        ["help"] = "How tall mCompass should be drawn on screen (e.g. a value of 0.03 takes up 3% of the screen height)"
+    },
+    ["color"] = {
+        ["default"] = "255 255 255 255",
+        ["help"] = "Color of mCompass in [Red Green Blue Alpha] format",
+    },
+}
+
 -- add console command to reset compass config to defaults
 concommand.Add("mcompass_reset", function(ply, cmd, args)
-    RunConsoleCommand("mcompass_enabled", "1")
-    RunConsoleCommand("mcompass_style", "1")
-    RunConsoleCommand("mcompass_heading", "1")
-    RunConsoleCommand("mcompass_xposition", "0.5")
-    RunConsoleCommand("mcompass_yposition", "0.05")
-    RunConsoleCommand("mcompass_width", "0.25")
-    RunConsoleCommand("mcompass_height", "0.03")
-    RunConsoleCommand("mcompass_spacing", "2.5")
-    RunConsoleCommand("mcompass_ratio", "1.8")
-    RunConsoleCommand("mcompass_color", "255", "255", "255", "255")
+    for k, v in pairs(_mcompass_cvars_definitions) do
+        RunConsoleCommand("mcompass_" .. k, v["default"])
+    end
 end)
 
 -- create necessary client console variables
-CreateClientConVar("mcompass_enabled", "1", true, false)
-CreateClientConVar("mcompass_style", "1", true, false)
-CreateClientConVar("mcompass_heading", "1", true, false)
-CreateClientConVar("mcompass_xposition", "0.5", true, false)
-CreateClientConVar("mcompass_yposition", "0.05", true, false)
-CreateClientConVar("mcompass_width", "0.25", true, false)
-CreateClientConVar("mcompass_height", "0.03", true, false)
-CreateClientConVar("mcompass_spacing", "2.5", true, false)
-CreateClientConVar("mcompass_ratio", "1.8", true, false)
-CreateClientConVar("mcompass_color", "255 255 255 255", true, false)
+for k, v in pairs(_mcompass_cvars_definitions) do
+    CreateClientConVar("mcompass_" .. k, v["default"], true, false, v["help"], v["min"], v["max"])
+end
 
--- cached cvars defined by client
-MCOMPASS_CVARS = {}
-MCOMPASS_CVARS.enabled = tobool(GetConVar("mcompass_enabled"):GetInt())
--- TODO: get away from pre-defined styes
-MCOMPASS_CVARS.style = GetConVar("mcompass_style"):GetInt()
-MCOMPASS_CVARS.display_heading = tobool(GetConVar("mcompass_heading"):GetInt())
-MCOMPASS_CVARS.x_pos = GetConVar("mcompass_xposition"):GetFloat()
-MCOMPASS_CVARS.y_pos = GetConVar("mcompass_yposition"):GetFloat()
-MCOMPASS_CVARS.width = GetConVar("mcompass_width"):GetFloat()
-MCOMPASS_CVARS.height = GetConVar("mcompass_height"):GetFloat()
-MCOMPASS_CVARS.spacing = GetConVar("mcompass_spacing"):GetFloat()
--- TODO: ratio is confusing, should instead be split into main heading font size, sub heading font size, and number heading font size
--- cl_cvar_mcompass_ratio = GetConVar("mcompass_ratio"):GetFloat()
-MCOMPASS_CVARS.color = string_to_color(GetConVar("mcompass_color"):GetString())
+-- parse client cvars and return a table with the parsed values
+function fetch_mcompass_cvars()
+    -- TODO: add error handling and display for each of these
+    local mcompass_cvars = {}
+    mcompass_cvars.enabled = tobool(GetConVar("mcompass_enabled"):GetInt())
+    mcompass_cvars.display_heading = tobool(GetConVar("mcompass_display_heading"):GetInt())
+    mcompass_cvars.x_pos = GetConVar("mcompass_xposition"):GetFloat()
+    mcompass_cvars.y_pos = GetConVar("mcompass_yposition"):GetFloat()
+    mcompass_cvars.width = GetConVar("mcompass_width"):GetFloat()
+    mcompass_cvars.height = GetConVar("mcompass_height"):GetFloat()
+    mcompass_cvars.color = string_to_color(GetConVar("mcompass_color"):GetString())
+    return mcompass_cvars
+end
+
+MCOMPASS_CVARS = fetch_mcompass_cvars()
+
+function update_mcompass_cvars()
+    MCOMPASS_CVARS = fetch_mcompass_cvars()
+end
 
 -- add hooks to handle cvar changes from client
-cvars.AddChangeCallback("mcompass_enabled", function(convar, oldValue, newValue)
-    if newValue == "1" or newValue == "0" then
-        MCOMPASS_CVARS.enabled = tobool(newValue)
-    end
-    updateCompassSettings()
-end, "mcompass_enabled_cvar_callback")
-
-cvars.AddChangeCallback("mcompass_style", function(convar, oldValue, newValue)
-    local style = tonumber(newValue)
-    if style == 1 or style == 2 or style == 3 then
-        MCOMPASS_CVARS.style = style
-    end
-    updateCompassSettings()
-end, "mcompass_style_cvar_callback")
-
-cvars.AddChangeCallback("mcompass_heading", function(convar, oldValue, newValue)
-    MCOMPASS_CVARS.display_heading = tobool(newValue)
-    updateCompassSettings()
-end, "mcompass_heading_cvar_callback")
-
-cvars.AddChangeCallback("mcompass_xposition", function(convar, oldValue, newValue)
-    local x_pos = tonumber(newValue)
-    if x_pos >= 0 and x_pos <= 1 then
-        MCOMPASS_CVARS.x_pos = x_pos
-    end
-    updateCompassSettings()
-end, "mcompass_xposition_cvar_callback")
-
-cvars.AddChangeCallback("mcompass_yposition", function(convar, oldValue, newValue)
-    local y_pos = tonumber(newValue)
-    if y_pos >= 0 and y_pos <= 1 then
-        MCOMPASS_CVARS.y_pos = y_pos
-    end
-    updateCompassSettings()
-end, "mcompass_yposition_cvar_callback")
-
-cvars.AddChangeCallback("mcompass_width", function(convar, oldValue, newValue)
-    local width = tonumber(newValue)
-    if width >= 0 and width <= 1 then
-        MCOMPASS_CVARS.width = width
-    end
-    updateCompassSettings()
-end, "mcompass_width_cvar_callback")
-
-cvars.AddChangeCallback("mcompass_height", function(convar, oldValue, newValue)
-    local height = tonumber(newValue)
-    if height >= 0 and height <= 1 then
-        MCOMPASS_CVARS.height = height
-    end
-    updateCompassSettings()
-end, "mcompass_height_cvar_callback")
-
-cvars.AddChangeCallback("mcompass_spacing", function(convar, oldValue, newValue)
-    local spacing = tonumber(newValue)
-    if spacing > 1 and spacing < 10 then
-        MCOMPASS_CVARS.spacing = spacing
-    end
-    updateCompassSettings()
-end, "mcompass_spacing_cvar_callback")
-
--- cvars.AddChangeCallback("mcompass_ratio", function(convar, oldValue, newValue)
---     local foo = tonumber(newValue)
---     if foo > 0 and foo < 10 then
---         cl_cvar_mcompass_ratio = foo
---     end
---     updateCompassSettings()
--- end, "mcompass_ratio_cvar_callback")
-
-cvars.AddChangeCallback("mcompass_color", function(convar, oldValue, newValue)
-    MCOMPASS_CVARS.color = string_to_color(newValue)
-    updateCompassSettings()
-end, "mcompass_color_cvar_callback")
+MCOMPASS_CVAR_CALLBACK_IDS = {}
+for k, v in pairs(_mcompass_cvars_definitions) do
+    local cvar_cmd = "mcompass_" .. k
+    local cvar_callback_identifier = "mcompass_" .. k .. "_cvar_callback"
+    cvars.AddChangeCallback(cvar_cmd, function(convar, old_val, new_val)
+        update_mcompass_cvars()
+    end, cvar_callback_identifier)
+    table.insert(MCOMPASS_CVAR_CALLBACK_IDS, cvar_callback_identifier)
+end
