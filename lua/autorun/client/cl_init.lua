@@ -30,7 +30,7 @@ hook.Add("HUDPaint", "HUDPaint_Compass", function()
     local compass_x, compass_y = ScrW() * MCOMPASS_STYLE.x_pos, ScrH() * MCOMPASS_STYLE.y_pos
     local compass_width, compass_height = ScrW() * MCOMPASS_STYLE.width, ScrH() * MCOMPASS_STYLE.height
 
-    local desired_inflated_spacing = 1
+    local desired_inflated_spacing = 2
     local graduation_gap = (compass_width * desired_inflated_spacing) / 360
     local number_of_visible_graduations = compass_width / graduation_gap
 
@@ -51,34 +51,24 @@ hook.Add("HUDPaint", "HUDPaint_Compass", function()
         surface.DrawText(math.Round(ang.y) % 360)
     end
 
-    -- looping left to right, angs are -180 to positive 180
-
     local ang_y = math.Round(ang.y) % 360
     local compass_start_x = (compass_x - (compass_width / 2))
-    local compass_end_x = (compass_x + (compass_width / 2))
-
-    -- TODO: calculate the x position of the graduation lines
-    -- we should be taking compass start x, plus the distance to the next line
-    -- distance to next line should be current iteration * spacing in between ticks
-    -- spacing between ticks is calcualted by dividing compass width by 360 and multiplying that by client desired spacing
-    -- client desired spacing is just arbitrary value to inflate the distance between ticks
+    -- local compass_end_x = (compass_x + (compass_width / 2))
 
     for i = 0, number_of_visible_graduations do
-        -- TODO: problem here: as graduation_gap increases the color/size of the lines and 
-        -- roation speed of the compass don't change, which makes it act as sort of an offset.
-        -- it effectively does increase the spacing between lines, but creates a mismatch between
-        -- the actual angle of the player and the lines representing the angle
-        local x = compass_start_x + ((((ang_y / 360) * compass_width) + (i * graduation_gap)) % compass_width)
-        -- local x = compass_start_x + ((ang_y / 360) * compass_width)
+        -- the x position of the initial graduation line, or "tick". all the graduations in the compass
+        -- are drawn after, and in reference to, this one
+        local initial_graduation_x = (ang_y * desired_inflated_spacing / 360) * compass_width
+        -- the x position of the graduation line
+        local x = compass_start_x + ((initial_graduation_x + (i * graduation_gap)) % compass_width)
 
-        local i_offset = i
-        if i_offset % 90 == 0 then
+        if i % 90 == 0 then
             surface.SetDrawColor(255, 255, 255, 255)
             surface.DrawLine(x, compass_y, x, compass_y + compass_height * 0.8)
-        elseif i_offset % 45 == 0 then
+        elseif i % 45 == 0 then
             surface.SetDrawColor(200, 200, 200, 255)
             surface.DrawLine(x, compass_y, x, compass_y + compass_height * 0.5)
-        elseif i_offset % 5 == 0 then
+        elseif i % 5 == 0 then
             surface.SetDrawColor(150, 150, 150, 255)
             surface.DrawLine(x, compass_y, x, compass_y + compass_height * 0.2)
         end
