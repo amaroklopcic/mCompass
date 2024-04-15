@@ -13,3 +13,15 @@ function string_to_color(color_cvar)
 
     return string.ToColor(red .. " " .. blue .. " " .. green .. " " .. alpha)
 end
+
+function get_metric_value(units)
+    local meters = math.Round(units * 0.01905)
+    local kilometers = math.Round(meters / 1000, 2)
+    return (kilometers > 1) and kilometers .. "km" or meters .. "m"
+end
+
+function get_text_size(font, text)
+    surface.SetFont(font)
+    local w, h = surface.GetTextSize(text)
+    return w, h
+end
